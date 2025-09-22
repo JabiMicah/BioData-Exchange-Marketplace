@@ -7,6 +7,8 @@
 (define-constant err-invalid-access-type (err u105))
 (define-constant err-subscription-expired (err u106))
 (define-constant err-insufficient-stake (err u107))
+(define-constant err-invalid-rating (err u405))
+(define-constant err-empty-review (err u406))
 
 (define-data-var next-dataset-id uint u1)
 (define-data-var platform-fee-rate uint u5)
@@ -51,6 +53,10 @@
     reward-pool: uint
 })
 
+(define-map dataset-ratings {dataset-id: uint, user: principal} {rating: uint, review: (string-ascii 256), rated-at: uint})
+
+(define-map dataset-rating-summary uint {total-rating: uint, rating-count: uint})
+
 (define-public (register-dataset (title (string-ascii 128)) (description (string-ascii 512)) (data-hash (buff 32)) (price-per-access uint) (subscription-price uint))
     (let
         (
@@ -76,7 +82,12 @@
             stake-count: u0,
             reward-pool: u0
         })
-        
+
+        (map-set dataset-rating-summary dataset-id {
+            total-rating: u0,
+            rating-count: u0
+        })
+
         (var-set next-dataset-id (+ dataset-id u1))
         (ok dataset-id)
     )
@@ -199,6 +210,23 @@
     )
 )
 
+(define-public (rate-dataset (dataset-id uint) (rating uint) (review (string-ascii 256)))
+    (let
+        (
+            (current-summary (default-to {total-rating: u0, rating-count: u0} (map-get? dataset-rating-summary dataset-id)))
+        )
+        (asserts! (has-access tx-sender dataset-id) err-unauthorized)
+        (asserts! (and (>= rating u1) (<= rating u5)) err-invalid-rating)
+        (asserts! (> (len review) u0) err-empty-review)
+        (map-set dataset-ratings {dataset-id: dataset-id, user: tx-sender} {rating: rating, review: review, rated-at: burn-block-height})
+        (map-set dataset-rating-summary dataset-id {
+            total-rating: (+ (get total-rating current-summary) rating),
+            rating-count: (+ (get rating-count current-summary) u1)
+        })
+        (ok true)
+    )
+)
+
 (define-public (deactivate-dataset (dataset-id uint))
     (let
         (
@@ -276,6 +304,19 @@
     (match (map-get? datasets dataset-id)
         dataset (ok (* (get subscription-price dataset) (/ duration-blocks u1000)))
         err-not-found
+    )
+)
+
+(define-read-only (get-dataset-average-rating (dataset-id uint))
+    (let
+        (
+            (summary (default-to {total-rating: u0, rating-count: u0} (map-get? dataset-rating-summary dataset-id)))
+            (count (get rating-count summary))
+        )
+        (if (> count u0)
+            (ok (/ (get total-rating summary) count))
+            (ok u0)
+        )
     )
 )
 
