@@ -23,7 +23,8 @@
     subscription-price: uint,
     total-downloads: uint,
     revenue-earned: uint,
-    is-active: bool
+    is-active: bool,
+    current-version: uint
 })
 
 (define-map dataset-access uint {
@@ -57,6 +58,8 @@
 
 (define-map dataset-rating-summary uint {total-rating: uint, rating-count: uint})
 
+(define-map dataset-versions {dataset-id: uint, version: uint} {data-hash: (buff 32), updated-at: uint, changelog: (string-ascii 256)})
+
 (define-public (register-dataset (title (string-ascii 128)) (description (string-ascii 512)) (data-hash (buff 32)) (price-per-access uint) (subscription-price uint))
     (let
         (
@@ -74,7 +77,8 @@
             subscription-price: subscription-price,
             total-downloads: u0,
             revenue-earned: u0,
-            is-active: true
+            is-active: true,
+            current-version: u1
         })
         
         (map-set dataset-stakes dataset-id {
@@ -86,6 +90,12 @@
         (map-set dataset-rating-summary dataset-id {
             total-rating: u0,
             rating-count: u0
+        })
+
+        (map-set dataset-versions {dataset-id: dataset-id, version: u1} {
+            data-hash: data-hash,
+            updated-at: burn-block-height,
+            changelog: ""
         })
 
         (var-set next-dataset-id (+ dataset-id u1))
@@ -253,6 +263,28 @@
         (asserts! (is-eq tx-sender contract-owner) err-owner-only)
         (var-set min-stake-amount new-min-stake)
         (ok true)
+    )
+)
+
+(define-public (update-dataset-version (dataset-id uint) (new-data-hash (buff 32)) (changelog (string-ascii 256)))
+    (let
+        (
+            (dataset (unwrap! (map-get? datasets dataset-id) err-not-found))
+            (current-version (get current-version dataset))
+            (new-version (+ current-version u1))
+        )
+        (asserts! (is-eq tx-sender (get owner dataset)) err-unauthorized)
+        (asserts! (get is-active dataset) (err u402))
+        (map-set dataset-versions {dataset-id: dataset-id, version: new-version} {
+            data-hash: new-data-hash,
+            updated-at: burn-block-height,
+            changelog: changelog
+        })
+        (map-set datasets dataset-id (merge dataset {
+            data-hash: new-data-hash,
+            current-version: new-version
+        }))
+        (ok new-version)
     )
 )
 
