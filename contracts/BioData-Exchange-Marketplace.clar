@@ -288,6 +288,23 @@
     )
 )
 
+(define-public (update-dataset-price (dataset-id uint) (new-price-per-access uint) (new-subscription-price uint))
+    (let
+        (
+            (dataset (unwrap! (map-get? datasets dataset-id) err-not-found))
+        )
+        (asserts! (is-eq tx-sender (get owner dataset)) err-unauthorized)
+        (asserts! (get is-active dataset) (err u402))
+        (asserts! (> new-price-per-access u0) (err u401))
+        (asserts! (> new-subscription-price u0) (err u401))
+        (map-set datasets dataset-id (merge dataset {
+            price-per-access: new-price-per-access,
+            subscription-price: new-subscription-price
+        }))
+        (ok true)
+    )
+)
+
 (define-read-only (get-dataset (dataset-id uint))
     (map-get? datasets dataset-id)
 )
